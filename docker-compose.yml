@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  autoclicker:
+    build: .
+    container_name: autoclicker
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json
+      - ./logs:/app/logs
+    environment:
+      - TZ=UTC
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,9 @@
+{
+  "urls": [
+    "https://example.com",
+    "https://httpbin.org/status/200"
+  ],
+  "interval_seconds": 300,
+  "timeout_seconds": 10,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}

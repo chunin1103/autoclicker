@@ -1,0 +1,18 @@
+[Unit]
+Description=Autoclicker Website Pinger Service
+After=network.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/path/to/autoclicker
+ExecStart=/usr/bin/python3 /path/to/autoclicker/autoclicker.py
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=append:/var/log/autoclicker/autoclicker.log
+StandardError=append:/var/log/autoclicker/autoclicker-error.log
+
+[Install]
+WantedBy=multi-user.target
