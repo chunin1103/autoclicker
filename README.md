@@ -7,9 +7,12 @@ A Python-based service that automatically pings configured websites at regular i
 - ✓ Configurable URL list
 - ✓ Customizable ping intervals
 - ✓ Comprehensive logging
+- ✓ Health check endpoints for cloud platforms
+- ✓ Web dashboard for status monitoring
 - ✓ Multiple deployment options for 24/7 operation
 - ✓ Docker support
 - ✓ Systemd service support
+- ✓ Koyeb-ready deployment
 - ✓ Graceful error handling
 
 ## Quick Start
@@ -55,9 +58,110 @@ python3 autoclicker.py
 
 Press `Ctrl+C` to stop.
 
+### 4. Access Web Interface
+
+Once running, the service provides these endpoints:
+- `http://localhost:8000/` - Service info
+- `http://localhost:8000/health` - Health check
+- `http://localhost:8000/status` - Detailed status with ping statistics
+
 ## 24/7 Deployment Options
 
-### Option 1: Docker (Recommended)
+### Option 1: Koyeb (Recommended - Free Tier Available)
+
+**Advantages:**
+- Free tier with 2 web services and 2 databases
+- Automatic HTTPS and global CDN
+- Zero-downtime deployments
+- Built-in monitoring and logs
+- No credit card required for free tier
+- Auto-scaling and health checks
+
+**Deployment Steps:**
+
+**Method A: Deploy from GitHub (Recommended)**
+
+1. **Push your code to GitHub:**
+   ```bash
+   git add .
+   git commit -m "Ready for Koyeb deployment"
+   git push origin main
+   ```
+
+2. **Deploy on Koyeb:**
+   - Go to [app.koyeb.com](https://app.koyeb.com)
+   - Sign up or log in
+   - Click "Create App"
+   - Select "GitHub" as deployment source
+   - Authorize Koyeb to access your repository
+   - Select your repository: `autoclicker`
+   - Configure the deployment:
+     - **Builder**: Buildpack
+     - **Build command**: (leave empty, auto-detected)
+     - **Run command**: `gunicorn autoclicker:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120`
+     - **Port**: 8000
+   - Add environment variables (optional):
+     - You can add custom config via environment variables if needed
+   - Configure health checks:
+     - **Path**: `/health`
+     - **Port**: 8000
+   - Click "Deploy"
+
+3. **Update your config.json (if needed):**
+   - After deployment, you can update `config.json` via the Koyeb dashboard
+   - Or redeploy after pushing changes to GitHub
+
+4. **Access your service:**
+   - Koyeb will provide a public URL like: `https://your-app.koyeb.app`
+   - Check status: `https://your-app.koyeb.app/status`
+   - Health check: `https://your-app.koyeb.app/health`
+
+**Method B: Deploy from Docker**
+
+1. **Push your Docker image to Docker Hub:**
+   ```bash
+   docker build -t yourusername/autoclicker .
+   docker push yourusername/autoclicker
+   ```
+
+2. **Deploy on Koyeb:**
+   - Go to [app.koyeb.com](https://app.koyeb.com)
+   - Click "Create App"
+   - Select "Docker" as deployment source
+   - Enter your Docker image: `yourusername/autoclicker`
+   - Configure port: 8000
+   - Set health check path: `/health`
+   - Click "Deploy"
+
+**Managing your Koyeb deployment:**
+
+```bash
+# View logs
+# Go to app.koyeb.com → Your App → Logs
+
+# Redeploy
+# Push changes to GitHub, Koyeb auto-deploys
+
+# Scale
+# Go to app.koyeb.com → Your App → Settings → Scaling
+```
+
+**Koyeb Free Tier Limits:**
+- 2 web services
+- 2 databases
+- Shared CPU
+- 512 MB RAM per service
+- 2 GB disk storage
+- Unlimited bandwidth
+- Auto-sleep after inactivity (but wakes on request)
+
+**Important Notes for Koyeb:**
+- The service includes a web server (Flask) that responds to health checks
+- Your pinger runs in the background while the web server stays alive
+- Koyeb's health checks keep your service running 24/7
+- Free tier may sleep after inactivity, but wakes on HTTP requests
+
+### Option 2: Docker (Local/VPS Deployment)
 
 **Advantages:**
 - Easy to deploy anywhere
