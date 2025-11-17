@@ -223,6 +223,21 @@ app = Flask(__name__)
 pinger = None
 
 
+def initialize_pinger():
+    """Initialize the pinger and start background thread"""
+    global pinger
+    if pinger is None:
+        logger.info("Initializing pinger...")
+        pinger = WebsitePinger()
+        pinger_thread = threading.Thread(target=pinger.run, daemon=True)
+        pinger_thread.start()
+        logger.info("Pinger initialized and background thread started")
+
+
+# Initialize pinger when module is imported (for WSGI servers like Gunicorn)
+initialize_pinger()
+
+
 @app.route('/')
 def index():
     """Root endpoint"""
@@ -382,18 +397,10 @@ def update_settings():
     return jsonify({'message': 'Settings updated successfully'})
 
 
-def run_pinger():
-    """Run the pinger in a background thread"""
-    global pinger
-    pinger = WebsitePinger()
-    pinger.run()
-
-
 def main():
     """Main entry point"""
-    # Start pinger in background thread
-    pinger_thread = threading.Thread(target=run_pinger, daemon=True)
-    pinger_thread.start()
+    # Pinger is already initialized at module level
+    # This is just for running locally with Flask's development server
 
     logger.info("Starting web server...")
 
