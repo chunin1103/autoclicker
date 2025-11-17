@@ -4,11 +4,13 @@ A Python-based service that automatically pings configured websites at regular i
 
 ## Features
 
-- ✓ Configurable URL list
-- ✓ Customizable ping intervals
+- ✓ **Professional Admin Interface** - Notion-style web UI for managing URLs
+- ✓ Add/Delete/Enable/Disable URLs without editing config files
+- ✓ Real-time status monitoring and statistics
+- ✓ Configurable ping intervals and timeout settings
 - ✓ Comprehensive logging
 - ✓ Health check endpoints for cloud platforms
-- ✓ Web dashboard for status monitoring
+- ✓ REST API for programmatic access
 - ✓ Multiple deployment options for 24/7 operation
 - ✓ Docker support
 - ✓ Systemd service support
@@ -30,13 +32,28 @@ pip install -r requirements.txt
 
 ### 2. Configuration
 
-Edit `config.json` to add your URLs:
+You have two options for configuration:
+
+**Option A: Use the Admin Interface (Recommended)**
+
+Once the service is running, visit `http://localhost:8000/admin` to manage URLs through a professional web interface. You can:
+- Add new URLs with custom names
+- Enable/disable URLs with a toggle switch
+- Delete URLs you no longer need
+- View real-time ping status
+- Update settings (interval, timeout)
+
+**Option B: Edit config.json manually**
 
 ```json
 {
   "urls": [
-    "https://your-website.com",
-    "https://another-site.com"
+    {
+      "id": "1",
+      "url": "https://your-website.com",
+      "name": "My Website",
+      "enabled": true
+    }
   ],
   "interval_seconds": 300,
   "timeout_seconds": 10,
@@ -45,7 +62,7 @@ Edit `config.json` to add your URLs:
 ```
 
 **Configuration options:**
-- `urls`: List of URLs to ping
+- `urls`: List of URL objects with id, url, name, and enabled status
 - `interval_seconds`: Time between ping cycles (default: 300 = 5 minutes)
 - `timeout_seconds`: Request timeout (default: 10)
 - `user_agent`: User agent string for requests
@@ -61,9 +78,34 @@ Press `Ctrl+C` to stop.
 ### 4. Access Web Interface
 
 Once running, the service provides these endpoints:
-- `http://localhost:8000/` - Service info
+- `http://localhost:8000/admin` - **Admin interface for URL management** (Recommended!)
+- `http://localhost:8000/` - Service info and API documentation
 - `http://localhost:8000/health` - Health check
 - `http://localhost:8000/status` - Detailed status with ping statistics
+
+## Admin Interface
+
+The admin interface provides a clean, Notion-style dashboard for managing your URLs:
+
+![Admin Interface Features]
+- **Add URLs**: Simply enter a name and URL, click "Add URL"
+- **Toggle URLs**: Enable/disable URLs with a single click
+- **Delete URLs**: Remove URLs you no longer need
+- **View Status**: See which URLs are online/offline in real-time
+- **Update Settings**: Change ping interval and timeout settings
+- **Statistics**: Track total URLs, active URLs, and total pings
+
+**Accessing the Admin Interface:**
+- Local: `http://localhost:8000/admin`
+- Koyeb: `https://your-app.koyeb.app/admin`
+- VPS: `http://your-server-ip:8000/admin`
+
+**Admin Interface Features:**
+- Clean, minimal design inspired by Notion
+- Real-time updates every 30 seconds
+- Toast notifications for all actions
+- Responsive layout works on mobile
+- No authentication required (add authentication if needed)
 
 ## 24/7 Deployment Options
 

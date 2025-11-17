@@ -79,9 +79,27 @@ https://your-app-name-yourorg.koyeb.app
 
 ### Check Endpoints
 
+- **Admin Interface**: `https://your-app-name.koyeb.app/admin` ⭐ **Start here!**
 - **Home**: `https://your-app-name.koyeb.app/`
 - **Health**: `https://your-app-name.koyeb.app/health`
 - **Status**: `https://your-app-name.koyeb.app/status`
+
+### Use the Admin Interface
+
+1. Visit `https://your-app-name.koyeb.app/admin`
+2. You'll see a clean, Notion-style interface
+3. Add your URLs by:
+   - Entering a name (e.g., "My Website")
+   - Entering the URL (e.g., "https://mysite.com")
+   - Clicking "Add URL"
+4. Manage URLs:
+   - Toggle URLs on/off with the switch
+   - Delete URLs with the Delete button
+   - View real-time status (Online/Offline/Pending)
+5. Update settings:
+   - Scroll to "Settings" section
+   - Change ping interval or timeout
+   - Click "Save Settings"
 
 ### View Logs
 
@@ -90,15 +108,32 @@ https://your-app-name-yourorg.koyeb.app
 3. Click on **"Logs"** tab
 4. You'll see your ping activity in real-time!
 
-## Updating Configuration
+## Managing URLs
 
-### Method 1: Update config.json via GitHub
+### Method 1: Use the Admin Interface (Recommended) ⭐
+
+The easiest way to manage URLs is through the admin interface:
+
+1. Visit `https://your-app.koyeb.app/admin`
+2. Add, delete, or toggle URLs directly in the browser
+3. Changes are saved immediately - no need to redeploy!
+4. The pinger will pick up changes on the next cycle
+
+**Benefits:**
+- No need to edit code or redeploy
+- Real-time status updates
+- Easy to use, no technical knowledge required
+- Changes take effect within minutes
+
+### Method 2: Update config.json via GitHub
 
 1. Edit `config.json` in your repository
 2. Commit and push changes
 3. Koyeb will auto-deploy (if auto-deploy is enabled)
 
-### Method 2: Environment Variables (Advanced)
+**Note:** Using the admin interface is much faster and doesn't require redeployment!
+
+### Method 3: Environment Variables (Advanced)
 
 You can override config via environment variables in Koyeb:
 1. Go to your app → **Settings** → **Environment**
