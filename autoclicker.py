@@ -51,10 +51,9 @@ class WebsitePinger:
         self.timeout = self.db.get_setting('timeout_seconds', 10)
         self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
 
-        # Track statistics
+        # Track statistics (total_pings now stored in database)
         self.last_ping_time = None
         self.last_results = {}
-        self.total_pings = 0
         self.is_running = False
 
         logger.info(f"Initialized pinger with {len(self.urls)} URLs from database")
@@ -180,10 +179,11 @@ class WebsitePinger:
         successful = sum(1 for v in results.values() if v)
         logger.info(f"Ping cycle complete: {successful}/{len(results)} successful")
 
-        # Update statistics
+        # Update statistics in database for persistence across workers
         self.last_ping_time = datetime.now()
         self.last_results = results
-        self.total_pings += 1
+        total_pings = self.db.increment_statistic('total_pings')
+        logger.info(f"Total ping cycles completed: {total_pings}")
 
         return results
 
@@ -214,7 +214,7 @@ class WebsitePinger:
             'urls_count': len(self.urls),
             'interval_seconds': self.interval,
             'last_ping_time': self.last_ping_time.isoformat() if self.last_ping_time else None,
-            'total_pings': self.total_pings,
+            'total_pings': self.db.get_statistic('total_pings'),
             'last_results': self.last_results
         }
 
