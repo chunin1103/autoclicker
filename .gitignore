@@ -49,3 +49,8 @@ Thumbs.db
 
 # Project specific
 config.local.json
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+config.json.backup

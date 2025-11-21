@@ -15,6 +15,7 @@ from typing import List, Dict
 import requests
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request
+from database import Database
 
 # Configure logging
 logging.basicConfig(
@@ -32,19 +33,23 @@ logger = logging.getLogger(__name__)
 class WebsitePinger:
     """Handles pinging of configured websites"""
 
-    def __init__(self, config_path: str = 'config.json'):
+    def __init__(self, config_path: str = 'config.json', db_path: str = 'autoclicker.db'):
         """Initialize the pinger with configuration"""
         self.config_path = config_path
+        self.db_path = db_path
         self.config_lock = threading.Lock()
-        self.config = self.load_config(config_path)
-        self.urls = self.config.get('urls', [])
 
-        # Normalize URLs to new format if needed
-        self._normalize_urls()
+        # Initialize database
+        self.db = Database(db_path)
 
-        self.interval = self.config.get('interval_seconds', 300)
-        self.timeout = self.config.get('timeout_seconds', 10)
-        self.user_agent = self.config.get('user_agent', 'AutoClicker/1.0')
+        # Migrate data from config.json if database is empty
+        self._migrate_from_json_if_needed()
+
+        # Load configuration from database
+        self.urls = self.db.get_all_urls()
+        self.interval = self.db.get_setting('interval_seconds', 300)
+        self.timeout = self.db.get_setting('timeout_seconds', 10)
+        self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
 
         # Track statistics
         self.last_ping_time = None
@@ -52,66 +57,64 @@ class WebsitePinger:
         self.total_pings = 0
         self.is_running = False
 
-        logger.info(f"Initialized pinger with {len(self.urls)} URLs")
+        logger.info(f"Initialized pinger with {len(self.urls)} URLs from database")
         logger.info(f"Ping interval: {self.interval} seconds")
 
-    def _normalize_urls(self):
-        """Convert old URL format (strings) to new format (objects)"""
-        normalized = []
-        for i, url in enumerate(self.urls):
-            if isinstance(url, str):
-                # Old format - convert to new format
-                normalized.append({
-                    'id': str(i + 1),
-                    'url': url,
-                    'enabled': True,
-                    'name': f'URL {i + 1}'
-                })
-            else:
-                # Already in new format
-                if 'id' not in url:
-                    url['id'] = str(uuid.uuid4())
-                if 'enabled' not in url:
-                    url['enabled'] = True
-                if 'name' not in url:
-                    url['name'] = f'URL {i + 1}'
-                normalized.append(url)
+    def _migrate_from_json_if_needed(self):
+        """Migrate data from config.json to database if database is empty"""
+        # Check if database has any URLs
+        existing_urls = self.db.get_all_urls()
 
-        if normalized != self.urls:
-            self.urls = normalized
-            self.config['urls'] = normalized
-            self.save_config()
+        if not existing_urls and os.path.exists(self.config_path):
+            logger.info("Database is empty. Migrating data from config.json...")
+            try:
+                config = self.load_config(self.config_path)
+                if config:
+                    self.db.import_from_config(config)
+                    logger.info("Migration from config.json completed successfully")
+
+                    # Backup the config.json file
+                    backup_path = f"{self.config_path}.backup"
+                    import shutil
+                    shutil.copy(self.config_path, backup_path)
+                    logger.info(f"Created backup: {backup_path}")
+            except Exception as e:
+                logger.error(f"Error during migration: {e}")
 
     def load_config(self, config_path: str) -> Dict:
-        """Load configuration from JSON file"""
+        """Load configuration from JSON file (used for migration only)"""
         try:
             with open(config_path, 'r') as f:
                 return json.load(f)
         except FileNotFoundError:
-            logger.error(f"Config file not found: {config_path}")
+            logger.warning(f"Config file not found: {config_path}")
             return {}
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in config file: {e}")
             return {}
 
     def save_config(self):
-        """Save configuration to JSON file"""
+        """
+        Export database to config.json as backup
+        Note: Primary storage is now the database
+        """
         with self.config_lock:
             try:
+                config = self.db.export_to_config()
                 with open(self.config_path, 'w') as f:
-                    json.dump(self.config, f, indent=2)
-                logger.info("Configuration saved successfully")
+                    json.dump(config, f, indent=2)
+                logger.info("Configuration exported to JSON backup")
             except Exception as e:
-                logger.error(f"Error saving config: {e}")
+                logger.error(f"Error exporting config: {e}")
 
     def reload_config(self):
-        """Reload configuration from file"""
+        """Reload configuration from database"""
         with self.config_lock:
-            self.config = self.load_config(self.config_path)
-            self.urls = self.config.get('urls', [])
-            self.interval = self.config.get('interval_seconds', 300)
-            self.timeout = self.config.get('timeout_seconds', 10)
-            logger.info("Configuration reloaded")
+            self.urls = self.db.get_all_urls()
+            self.interval = self.db.get_setting('interval_seconds', 300)
+            self.timeout = self.db.get_setting('timeout_seconds', 10)
+            self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
+            logger.info("Configuration reloaded from database")
 
     def ping_url(self, url: str) -> bool:
         """
@@ -282,7 +285,8 @@ def admin():
 def get_config():
     """Get current configuration"""
     if pinger:
-        return jsonify(pinger.config)
+        config = pinger.db.export_to_config()
+        return jsonify(config)
     return jsonify({'error': 'Pinger not initialized'}), 500
 
 
@@ -290,7 +294,8 @@ def get_config():
 def get_urls():
     """Get all URLs"""
     if pinger:
-        return jsonify(pinger.urls)
+        urls = pinger.db.get_all_urls()
+        return jsonify(urls)
     return jsonify({'error': 'Pinger not initialized'}), 500
 
 
@@ -304,17 +309,17 @@ def add_url():
     if not data or 'url' not in data:
         return jsonify({'error': 'URL is required'}), 400
 
-    # Create new URL object
-    new_url = {
-        'id': str(uuid.uuid4()),
-        'url': data['url'],
-        'name': data.get('name', 'New URL'),
-        'enabled': data.get('enabled', True)
-    }
+    # Add URL to database
+    new_url = pinger.db.add_url(
+        url=data['url'],
+        name=data.get('name', 'New URL'),
+        enabled=data.get('enabled', True)
+    )
 
-    # Add to config
-    pinger.urls.append(new_url)
-    pinger.config['urls'] = pinger.urls
+    # Reload configuration
+    pinger.reload_config()
+
+    # Export to JSON backup
     pinger.save_config()
 
     logger.info(f"Added new URL: {new_url['name']} ({new_url['url']})")
@@ -332,22 +337,22 @@ def update_url(url_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    # Find the URL
-    url_obj = next((u for u in pinger.urls if u['id'] == url_id), None)
-    if not url_obj:
+    # Update in database
+    success = pinger.db.update_url(url_id, **data)
+    if not success:
         return jsonify({'error': 'URL not found'}), 404
 
-    # Update fields
-    if 'url' in data:
-        url_obj['url'] = data['url']
-    if 'name' in data:
-        url_obj['name'] = data['name']
-    if 'enabled' in data:
-        url_obj['enabled'] = data['enabled']
-        logger.info(f"URL {url_obj['name']} {'enabled' if data['enabled'] else 'disabled'}")
+    # Get updated URL
+    url_obj = pinger.db.get_url(url_id)
 
-    pinger.config['urls'] = pinger.urls
+    # Reload configuration
+    pinger.reload_config()
+
+    # Export to JSON backup
     pinger.save_config()
+
+    if 'enabled' in data:
+        logger.info(f"URL {url_obj['name']} {'enabled' if data['enabled'] else 'disabled'}")
 
     return jsonify(url_obj)
 
@@ -358,13 +363,18 @@ def delete_url(url_id):
     if not pinger:
         return jsonify({'error': 'Pinger not initialized'}), 500
 
-    # Find and remove the URL
-    url_obj = next((u for u in pinger.urls if u['id'] == url_id), None)
+    # Get URL info before deleting
+    url_obj = pinger.db.get_url(url_id)
     if not url_obj:
         return jsonify({'error': 'URL not found'}), 404
 
-    pinger.urls = [u for u in pinger.urls if u['id'] != url_id]
-    pinger.config['urls'] = pinger.urls
+    # Delete from database
+    pinger.db.delete_url(url_id)
+
+    # Reload configuration
+    pinger.reload_config()
+
+    # Export to JSON backup
     pinger.save_config()
 
     logger.info(f"Deleted URL: {url_obj['name']} ({url_obj['url']})")
@@ -382,17 +392,21 @@ def update_settings():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    # Update settings
+    # Update settings in database
     if 'interval_seconds' in data:
-        pinger.config['interval_seconds'] = int(data['interval_seconds'])
+        pinger.db.set_setting('interval_seconds', int(data['interval_seconds']))
     if 'timeout_seconds' in data:
-        pinger.config['timeout_seconds'] = int(data['timeout_seconds'])
+        pinger.db.set_setting('timeout_seconds', int(data['timeout_seconds']))
     if 'user_agent' in data:
-        pinger.config['user_agent'] = data['user_agent']
+        pinger.db.set_setting('user_agent', data['user_agent'])
 
+    # Reload configuration
+    pinger.reload_config()
+
+    # Export to JSON backup
     pinger.save_config()
 
-    logger.info("Settings updated")
+    logger.info("Settings updated in database")
 
     return jsonify({'message': 'Settings updated successfully'})
 
