@@ -69,6 +69,15 @@ class Database:
                 )
             ''')
 
+            # Create statistics table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS statistics (
+                    key TEXT PRIMARY KEY,
+                    value INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                )
+            ''')
+
             # Create indices for better performance
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_urls_enabled
@@ -312,6 +321,81 @@ class Database:
 
         # Return as string
         return value
+
+    # Statistics Management Methods
+
+    def get_statistic(self, key: str) -> int:
+        """
+        Get a statistic value
+
+        Args:
+            key: Statistic key (e.g., 'total_pings')
+
+        Returns:
+            Statistic value (defaults to 0 if not found)
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT value FROM statistics WHERE key = ?', (key,))
+            row = cursor.fetchone()
+
+            if row:
+                return int(row['value'])
+            return 0
+
+    def increment_statistic(self, key: str, amount: int = 1) -> int:
+        """
+        Increment a statistic value atomically
+
+        Args:
+            key: Statistic key
+            amount: Amount to increment by (default: 1)
+
+        Returns:
+            New value after increment
+        """
+        now = datetime.now().isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get current value
+            cursor.execute('SELECT value FROM statistics WHERE key = ?', (key,))
+            row = cursor.fetchone()
+
+            if row:
+                new_value = int(row['value']) + amount
+                cursor.execute('''
+                    UPDATE statistics SET value = ?, updated_at = ? WHERE key = ?
+                ''', (new_value, now, key))
+            else:
+                new_value = amount
+                cursor.execute('''
+                    INSERT INTO statistics (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                ''', (key, new_value, now))
+
+        logger.debug(f"Statistic incremented: {key} = {new_value}")
+        return new_value
+
+    def set_statistic(self, key: str, value: int):
+        """
+        Set a statistic value
+
+        Args:
+            key: Statistic key
+            value: Statistic value
+        """
+        now = datetime.now().isoformat()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO statistics (key, value, updated_at)
+                VALUES (?, ?, ?)
+            ''', (key, value, now))
+
+        logger.info(f"Statistic set: {key} = {value}")
 
     # Migration and Backup Methods
 
