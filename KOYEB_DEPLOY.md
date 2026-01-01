@@ -91,15 +91,25 @@ https://your-app-name-yourorg.koyeb.app
 3. Add your URLs by:
    - Entering a name (e.g., "My Website")
    - Entering the URL (e.g., "https://mysite.com")
+   - (Optional) Set custom ping interval in seconds
+   - (Optional) Set active hours (e.g., 09:00 - 22:00)
    - Clicking "Add URL"
 4. Manage URLs:
    - Toggle URLs on/off with the switch
+   - Edit intervals inline (leave empty for global default)
+   - Edit active hours inline (leave empty for 24/7)
    - Delete URLs with the Delete button
    - View real-time status (Online/Offline/Pending)
-5. Update settings:
+5. Update global settings:
    - Scroll to "Settings" section
-   - Change ping interval or timeout
+   - Change global ping interval or timeout
+   - **Select your timezone** (important for active hours!)
    - Click "Save Settings"
+
+**New Features:**
+- **Per-URL Intervals**: Set different ping intervals for each URL
+- **Active Hours**: Configure time windows when each URL should ping
+- **Timezone Support**: Active hours work correctly in your timezone even if server is in UTC
 
 ### View Logs
 

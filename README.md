@@ -5,6 +5,11 @@ A Python-based service that automatically pings configured websites at regular i
 ## Features
 
 - ✓ **Professional Admin Interface** - Notion-style web UI for managing URLs
+- ✓ **SQLite Database** - Persistent, crash-resistant data storage with automatic migrations
+- ✓ **Per-Website Intervals** - Set custom ping intervals for each URL independently
+- ✓ **Active Hours Scheduling** - Configure time windows when each URL should be pinged (e.g., 9 AM - 10 PM)
+- ✓ **Timezone Support** - Active hours work correctly regardless of server location
+- ✓ **Independent Timers** - Each URL pings on its own schedule with automatic pause/resume
 - ✓ Add/Delete/Enable/Disable URLs without editing config files
 - ✓ Real-time status monitoring and statistics
 - ✓ Configurable ping intervals and timeout settings
@@ -92,7 +97,9 @@ The admin interface provides a clean, Notion-style dashboard for managing your U
 - **Toggle URLs**: Enable/disable URLs with a single click
 - **Delete URLs**: Remove URLs you no longer need
 - **View Status**: See which URLs are online/offline in real-time
-- **Update Settings**: Change ping interval and timeout settings
+- **Per-URL Configuration**: Set custom intervals and active hours for each URL
+- **Timezone Settings**: Configure timezone for accurate active hours scheduling
+- **Update Settings**: Change global ping interval, timeout, and timezone
 - **Statistics**: Track total URLs, active URLs, and total pings
 
 **Accessing the Admin Interface:**
@@ -106,6 +113,69 @@ The admin interface provides a clean, Notion-style dashboard for managing your U
 - Toast notifications for all actions
 - Responsive layout works on mobile
 - No authentication required (add authentication if needed)
+- Inline editing for intervals and active hours
+
+## Advanced Features
+
+### Per-Website Ping Intervals
+
+Each URL can have its own ping interval:
+- **Critical sites**: Ping every 60 seconds
+- **Regular sites**: Ping every 300 seconds (5 minutes)
+- **Low-priority sites**: Ping every 600 seconds (10 minutes)
+- **Use global default**: Leave interval empty to use the global setting
+
+**How to set:**
+1. Go to admin interface
+2. Each URL shows an "Interval" input field
+3. Enter seconds (e.g., 60, 300, 600)
+4. Leave empty to use global default
+5. Changes apply immediately
+
+### Active Hours Scheduling
+
+Configure specific time windows when URLs should be pinged:
+- **Example 1**: Ping website only from 9 AM to 10 PM
+- **Example 2**: Ping during business hours (9 AM - 5 PM)
+- **Example 3**: Night mode (10 PM - 6 AM, crosses midnight)
+- **24/7 Mode**: Leave times empty for continuous pinging
+
+**How to set:**
+1. Go to admin interface
+2. Each URL shows "Active Hours" time pickers
+3. Set start time (e.g., 09:00) and end time (e.g., 22:00)
+4. Leave empty for 24/7 operation
+5. Outside active hours, pinging automatically pauses
+
+### Timezone Configuration
+
+All active hours use your configured timezone:
+- **Local development**: Works with your local timezone
+- **Cloud deployment**: Works correctly even if server is in different timezone
+- **Global teams**: Set timezone to match your team's location
+
+**Supported Timezones:**
+- Asia/Bangkok (GMT+7)
+- UTC (GMT+0)
+- America/New_York (EST/EDT)
+- America/Los_Angeles (PST/PDT)
+- Europe/London, Paris
+- Asia/Tokyo, Shanghai, Singapore, Hong Kong
+- Australia/Sydney
+- And more...
+
+**How to set:**
+1. Go to admin interface
+2. Scroll to "Settings" section
+3. Select timezone from dropdown
+4. Click "Save Settings"
+5. All timers automatically restart with new timezone
+
+**Example Scenario:**
+- Configure timezone: Asia/Bangkok (GMT+7)
+- Set active hours: 09:00 - 22:00
+- Deploy to Koyeb (UTC server)
+- Result: Pings correctly during 9 AM - 10 PM Bangkok time ✓
 
 ## 24/7 Deployment Options
 
