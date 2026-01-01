@@ -12,6 +12,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict
+from zoneinfo import ZoneInfo
 import requests
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request
@@ -50,6 +51,7 @@ class WebsitePinger:
         self.interval = self.db.get_setting('interval_seconds', 300)
         self.timeout = self.db.get_setting('timeout_seconds', 10)
         self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
+        self.timezone = self.db.get_setting('timezone', 'Asia/Bangkok')
 
         # Track statistics (total_pings now stored in database)
         self.last_ping_time = None
@@ -114,7 +116,8 @@ class WebsitePinger:
             self.interval = self.db.get_setting('interval_seconds', 300)
             self.timeout = self.db.get_setting('timeout_seconds', 10)
             self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
-            logger.info("Configuration reloaded from database")
+            self.timezone = self.db.get_setting('timezone', 'Asia/Bangkok')
+            logger.info(f"Configuration reloaded from database (timezone: {self.timezone})")
 
             # Restart all timers if pinger is running
             if self.is_running:
@@ -122,7 +125,7 @@ class WebsitePinger:
 
     def _is_in_active_hours(self, start_time: str, end_time: str) -> bool:
         """
-        Check if current time is within active hours
+        Check if current time is within active hours (in configured timezone)
 
         Args:
             start_time: Start time in HH:MM format (e.g., "09:00")
@@ -135,10 +138,12 @@ class WebsitePinger:
             # No time restrictions, always active
             return True
 
-        now = datetime.now()
-        current_time = now.time()
-
         try:
+            # Get current time in configured timezone
+            tz = ZoneInfo(self.timezone)
+            now = datetime.now(tz)
+            current_time = now.time()
+
             start = datetime.strptime(start_time, "%H:%M").time()
             end = datetime.strptime(end_time, "%H:%M").time()
 
@@ -148,13 +153,13 @@ class WebsitePinger:
             else:
                 # Crosses midnight (e.g., 22:00 to 06:00)
                 return current_time >= start or current_time <= end
-        except ValueError as e:
-            logger.error(f"Invalid time format: {e}")
-            return True  # Default to active if time format is invalid
+        except Exception as e:
+            logger.error(f"Error checking active hours: {e}")
+            return True  # Default to active if error occurs
 
     def _seconds_until_next_active_period(self, start_time: str) -> int:
         """
-        Calculate seconds until the next active period starts
+        Calculate seconds until the next active period starts (in configured timezone)
 
         Args:
             start_time: Start time in HH:MM format
@@ -166,19 +171,23 @@ class WebsitePinger:
             return 0
 
         try:
-            now = datetime.now()
+            # Get current time in configured timezone
+            tz = ZoneInfo(self.timezone)
+            now = datetime.now(tz)
             start = datetime.strptime(start_time, "%H:%M").time()
-            next_start = datetime.combine(now.date(), start)
+
+            # Create timezone-aware datetime for next start
+            next_start = datetime.combine(now.date(), start, tzinfo=tz)
 
             # If start time has passed today, schedule for tomorrow
             if next_start <= now:
-                next_start = datetime.combine(now.date(), start) + timedelta(days=1)
+                next_start = datetime.combine(now.date(), start, tzinfo=tz) + timedelta(days=1)
 
             seconds_until = (next_start - now).total_seconds()
             return int(seconds_until)
-        except ValueError as e:
-            logger.error(f"Invalid time format: {e}")
-            return 60  # Default to 1 minute if time format is invalid
+        except Exception as e:
+            logger.error(f"Error calculating next active period: {e}")
+            return 60  # Default to 1 minute if error occurs
 
     def _schedule_url_ping(self, url_obj: Dict):
         """
@@ -583,6 +592,8 @@ def update_settings():
         pinger.db.set_setting('timeout_seconds', int(data['timeout_seconds']))
     if 'user_agent' in data:
         pinger.db.set_setting('user_agent', data['user_agent'])
+    if 'timezone' in data:
+        pinger.db.set_setting('timezone', data['timezone'])
 
     # Reload configuration
     pinger.reload_config()

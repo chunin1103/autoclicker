@@ -417,6 +417,26 @@
                     <label for="timeoutSeconds">Timeout (seconds)</label>
                     <input type="text" id="timeoutSeconds" value="10">
                 </div>
+                <div class="form-group">
+                    <label for="timezone">Timezone</label>
+                    <select id="timezone" style="width: 100%; padding: 10px 12px; border: 1px solid #e0ddd8; border-radius: 4px; font-size: 14px; font-family: inherit;">
+                        <option value="Asia/Bangkok">Asia/Bangkok (GMT+7)</option>
+                        <option value="UTC">UTC (GMT+0)</option>
+                        <option value="America/New_York">America/New_York (EST/EDT)</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                        <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                        <option value="Europe/London">Europe/London (GMT/BST)</option>
+                        <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                        <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                        <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                        <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                        <option value="Asia/Hong_Kong">Asia/Hong_Kong (HKT)</option>
+                        <option value="Australia/Sydney">Australia/Sydney (AEDT/AEST)</option>
+                    </select>
+                    <small style="color: #787774; font-size: 12px; display: block; margin-top: 4px;">
+                        Active hours will use this timezone
+                    </small>
+                </div>
             </div>
             <button onclick="saveSettings()" class="btn btn-primary" style="margin-top: 16px;">Save Settings</button>
         </div>
@@ -437,6 +457,7 @@
 
                 document.getElementById('intervalSeconds').value = config.interval_seconds || 300;
                 document.getElementById('timeoutSeconds').value = config.timeout_seconds || 10;
+                document.getElementById('timezone').value = config.timezone || 'Asia/Bangkok';
 
                 renderUrls();
                 updateStats();
@@ -684,16 +705,18 @@
         async function saveSettings() {
             const interval_seconds = parseInt(document.getElementById('intervalSeconds').value);
             const timeout_seconds = parseInt(document.getElementById('timeoutSeconds').value);
+            const timezone = document.getElementById('timezone').value;
 
             try {
                 const response = await fetch('/api/settings', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interval_seconds, timeout_seconds })
+                    body: JSON.stringify({ interval_seconds, timeout_seconds, timezone })
                 });
 
                 if (response.ok) {
-                    showToast('Settings saved! Restart required for changes to take effect.');
+                    showToast('Settings saved! Timers restarted with new timezone.');
+                    await loadData();
                 } else {
                     showToast('Error saving settings');
                 }

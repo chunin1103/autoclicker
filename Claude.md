@@ -47,3 +47,11 @@
   - Added time picker UI in admin panel for setting active hours per URL
   - Real-time active hours editing with instant timer restart
   - Example: Set abc.com to ping from 9 AM - 10 PM with 300 second intervals
+- **Added timezone support (2026-01-01)**
+  - Added global `timezone` setting in database (default: Asia/Bangkok)
+  - All active hours use configured timezone instead of server local time
+  - Works correctly regardless of server deployment location (cloud vs local)
+  - Timezone selector in admin panel with 12 common timezones
+  - Uses Python's built-in zoneinfo for timezone handling (no extra dependencies)
+  - Changing timezone automatically restarts all timers
+  - Example: Deploy to UTC server but keep active hours in SE Asia timezone

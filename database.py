@@ -484,7 +484,8 @@ class Database:
         settings_to_import = {
             'interval_seconds': config.get('interval_seconds'),
             'timeout_seconds': config.get('timeout_seconds'),
-            'user_agent': config.get('user_agent')
+            'user_agent': config.get('user_agent'),
+            'timezone': config.get('timezone', 'Asia/Bangkok')
         }
 
         for key, value in settings_to_import.items():
@@ -519,7 +520,8 @@ class Database:
             ],
             'interval_seconds': settings.get('interval_seconds', 300),
             'timeout_seconds': settings.get('timeout_seconds', 10),
-            'user_agent': settings.get('user_agent', 'AutoClicker/1.0')
+            'user_agent': settings.get('user_agent', 'AutoClicker/1.0'),
+            'timezone': settings.get('timezone', 'Asia/Bangkok')
         }
 
         return config
