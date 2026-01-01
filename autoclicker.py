@@ -10,7 +10,7 @@ import time
 import os
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict
 import requests
 from pathlib import Path
@@ -120,49 +120,153 @@ class WebsitePinger:
             if self.is_running:
                 self._restart_all_timers()
 
-    def _schedule_url_ping(self, url_obj: Dict):
+    def _is_in_active_hours(self, start_time: str, end_time: str) -> bool:
         """
-        Schedule a ping for a specific URL
+        Check if current time is within active hours
 
         Args:
-            url_obj: URL object containing id, url, interval_seconds, etc.
+            start_time: Start time in HH:MM format (e.g., "09:00")
+            end_time: End time in HH:MM format (e.g., "22:00")
+
+        Returns:
+            True if current time is within active hours, False otherwise
+        """
+        if not start_time or not end_time:
+            # No time restrictions, always active
+            return True
+
+        now = datetime.now()
+        current_time = now.time()
+
+        try:
+            start = datetime.strptime(start_time, "%H:%M").time()
+            end = datetime.strptime(end_time, "%H:%M").time()
+
+            if start <= end:
+                # Same day range (e.g., 09:00 to 22:00)
+                return start <= current_time <= end
+            else:
+                # Crosses midnight (e.g., 22:00 to 06:00)
+                return current_time >= start or current_time <= end
+        except ValueError as e:
+            logger.error(f"Invalid time format: {e}")
+            return True  # Default to active if time format is invalid
+
+    def _seconds_until_next_active_period(self, start_time: str) -> int:
+        """
+        Calculate seconds until the next active period starts
+
+        Args:
+            start_time: Start time in HH:MM format
+
+        Returns:
+            Number of seconds until next active period
+        """
+        if not start_time:
+            return 0
+
+        try:
+            now = datetime.now()
+            start = datetime.strptime(start_time, "%H:%M").time()
+            next_start = datetime.combine(now.date(), start)
+
+            # If start time has passed today, schedule for tomorrow
+            if next_start <= now:
+                next_start = datetime.combine(now.date(), start) + timedelta(days=1)
+
+            seconds_until = (next_start - now).total_seconds()
+            return int(seconds_until)
+        except ValueError as e:
+            logger.error(f"Invalid time format: {e}")
+            return 60  # Default to 1 minute if time format is invalid
+
+    def _schedule_url_ping(self, url_obj: Dict):
+        """
+        Schedule a ping for a specific URL, respecting active hours
+
+        Args:
+            url_obj: URL object containing id, url, interval_seconds, start_time, end_time, etc.
         """
         url_id = url_obj['id']
         url = url_obj.get('url')
         interval = url_obj.get('interval_seconds') or self.interval
+        start_time = url_obj.get('start_time')
+        end_time = url_obj.get('end_time')
 
         def ping_and_reschedule():
-            """Ping the URL and reschedule if still enabled"""
-            # Ping the URL
-            success = self.ping_url(url)
-
-            # Update last results
-            self.last_results[url] = success
-            self.last_ping_time = datetime.now()
-
-            # Increment ping counter (per-URL basis)
-            self.db.increment_statistic('total_pings')
-
-            # Check if URL is still enabled and reschedule
+            """Check active hours, ping if active, and reschedule"""
+            # Check if URL is still enabled
             url_obj_current = self.db.get_url(url_id)
-            if url_obj_current and url_obj_current.get('enabled', True):
-                self._schedule_url_ping(url_obj_current)
-            else:
+            if not url_obj_current or not url_obj_current.get('enabled', True):
                 # URL was disabled or deleted, remove from timers
                 if url_id in self.timers:
                     del self.timers[url_id]
+                logger.info(f"URL {url_obj.get('name')} disabled or deleted, stopping timer")
+                return
+
+            # Update start_time and end_time from current URL object
+            current_start_time = url_obj_current.get('start_time')
+            current_end_time = url_obj_current.get('end_time')
+
+            # Check if we're in active hours
+            if self._is_in_active_hours(current_start_time, current_end_time):
+                # We're in active hours, ping the URL
+                logger.info(f"Pinging {url_obj_current.get('name')} (within active hours)")
+                success = self.ping_url(url)
+
+                # Update last results
+                self.last_results[url] = success
+                self.last_ping_time = datetime.now()
+
+                # Increment ping counter
+                self.db.increment_statistic('total_pings')
+
+                # Reschedule based on interval
+                self._schedule_url_ping(url_obj_current)
+            else:
+                # We're outside active hours, schedule check for next active period
+                if current_start_time:
+                    seconds_until = self._seconds_until_next_active_period(current_start_time)
+                    logger.info(f"{url_obj_current.get('name')} outside active hours. Next check in {seconds_until} seconds")
+
+                    # Schedule a check when active period starts
+                    timer = threading.Timer(seconds_until, lambda: self._schedule_url_ping(url_obj_current))
+                    timer.daemon = True
+                    timer.start()
+                    self.timers[url_id] = timer
+                else:
+                    # No start time, treat as always active and reschedule normally
+                    self._schedule_url_ping(url_obj_current)
 
         # Cancel existing timer for this URL if it exists
         if url_id in self.timers:
             self.timers[url_id].cancel()
 
-        # Create and start new timer
-        timer = threading.Timer(interval, ping_and_reschedule)
-        timer.daemon = True
-        timer.start()
-        self.timers[url_id] = timer
+        # Check if we're in active hours before scheduling
+        if self._is_in_active_hours(start_time, end_time):
+            # We're in active hours, schedule the next ping
+            timer = threading.Timer(interval, ping_and_reschedule)
+            timer.daemon = True
+            timer.start()
+            self.timers[url_id] = timer
+            logger.info(f"Scheduled {url_obj.get('name')} to ping in {interval} seconds (active hours: {start_time or 'always'} - {end_time or 'always'})")
+        else:
+            # We're outside active hours, schedule check for when active period starts
+            if start_time:
+                seconds_until = self._seconds_until_next_active_period(start_time)
+                logger.info(f"{url_obj.get('name')} outside active hours ({start_time} - {end_time}). Next check in {seconds_until} seconds")
 
-        logger.info(f"Scheduled {url_obj.get('name')} to ping in {interval} seconds")
+                timer = threading.Timer(seconds_until, ping_and_reschedule)
+                timer.daemon = True
+                timer.start()
+                self.timers[url_id] = timer
+            else:
+                # No time restriction, schedule normally
+                timer = threading.Timer(interval, ping_and_reschedule)
+                timer.daemon = True
+                timer.start()
+                self.timers[url_id] = timer
+                logger.info(f"Scheduled {url_obj.get('name')} to ping in {interval} seconds (24/7 active)")
 
     def _cancel_all_timers(self):
         """Cancel all active timers"""
@@ -391,7 +495,9 @@ def add_url():
         url=data['url'],
         name=data.get('name', 'New URL'),
         enabled=data.get('enabled', True),
-        interval_seconds=data.get('interval_seconds')
+        interval_seconds=data.get('interval_seconds'),
+        start_time=data.get('start_time'),
+        end_time=data.get('end_time')
     )
 
     # Reload configuration (this will restart timers)
@@ -400,7 +506,7 @@ def add_url():
     # Export to JSON backup
     pinger.save_config()
 
-    logger.info(f"Added new URL: {new_url['name']} ({new_url['url']}) - Interval: {new_url.get('interval_seconds', 'global default')}")
+    logger.info(f"Added new URL: {new_url['name']} ({new_url['url']}) - Interval: {new_url.get('interval_seconds', 'global default')}, Active: {new_url.get('start_time', 'always')} - {new_url.get('end_time', 'always')}")
 
     return jsonify(new_url), 201
 

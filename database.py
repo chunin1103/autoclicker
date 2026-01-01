@@ -56,6 +56,8 @@ class Database:
                     name TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     interval_seconds INTEGER,
+                    start_time TEXT,
+                    end_time TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -96,19 +98,35 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Migration: Add interval_seconds column to urls table if it doesn't exist
+            # Get current columns
             cursor.execute("PRAGMA table_info(urls)")
             columns = [row[1] for row in cursor.fetchall()]
 
+            # Migration: Add interval_seconds column to urls table if it doesn't exist
             if 'interval_seconds' not in columns:
                 logger.info("Running migration: Adding interval_seconds column to urls table")
                 cursor.execute('ALTER TABLE urls ADD COLUMN interval_seconds INTEGER')
                 conn.commit()
                 logger.info("Migration completed: interval_seconds column added")
 
+            # Migration: Add start_time column to urls table if it doesn't exist
+            if 'start_time' not in columns:
+                logger.info("Running migration: Adding start_time column to urls table")
+                cursor.execute('ALTER TABLE urls ADD COLUMN start_time TEXT')
+                conn.commit()
+                logger.info("Migration completed: start_time column added")
+
+            # Migration: Add end_time column to urls table if it doesn't exist
+            if 'end_time' not in columns:
+                logger.info("Running migration: Adding end_time column to urls table")
+                cursor.execute('ALTER TABLE urls ADD COLUMN end_time TEXT')
+                conn.commit()
+                logger.info("Migration completed: end_time column added")
+
     # URL Management Methods
 
-    def add_url(self, url: str, name: str, enabled: bool = True, interval_seconds: int = None) -> Dict:
+    def add_url(self, url: str, name: str, enabled: bool = True, interval_seconds: int = None,
+                start_time: str = None, end_time: str = None) -> Dict:
         """
         Add a new URL to the database
 
@@ -117,6 +135,8 @@ class Database:
             name: Display name for the URL
             enabled: Whether the URL is enabled
             interval_seconds: Custom ping interval for this URL (None = use global default)
+            start_time: Start time for active hours (HH:MM format, e.g., "09:00")
+            end_time: End time for active hours (HH:MM format, e.g., "22:00")
 
         Returns:
             Dictionary containing the created URL data
@@ -127,9 +147,9 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO urls (id, url, name, enabled, interval_seconds, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (url_id, url, name, 1 if enabled else 0, interval_seconds, now, now))
+                INSERT INTO urls (id, url, name, enabled, interval_seconds, start_time, end_time, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (url_id, url, name, 1 if enabled else 0, interval_seconds, start_time, end_time, now, now))
 
         logger.info(f"Added URL to database: {name} ({url})")
 
@@ -139,6 +159,8 @@ class Database:
             'name': name,
             'enabled': enabled,
             'interval_seconds': interval_seconds,
+            'start_time': start_time,
+            'end_time': end_time,
             'created_at': now,
             'updated_at': now
         }
@@ -196,12 +218,12 @@ class Database:
 
         Args:
             url_id: The URL ID
-            **kwargs: Fields to update (url, name, enabled, interval_seconds)
+            **kwargs: Fields to update (url, name, enabled, interval_seconds, start_time, end_time)
 
         Returns:
             True if updated, False if URL not found
         """
-        allowed_fields = {'url', 'name', 'enabled', 'interval_seconds'}
+        allowed_fields = {'url', 'name', 'enabled', 'interval_seconds', 'start_time', 'end_time'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -319,6 +341,8 @@ class Database:
             'name': row['name'],
             'enabled': bool(row['enabled']),
             'interval_seconds': row['interval_seconds'] if row['interval_seconds'] is not None else None,
+            'start_time': row['start_time'] if 'start_time' in row.keys() and row['start_time'] is not None else None,
+            'end_time': row['end_time'] if 'end_time' in row.keys() and row['end_time'] is not None else None,
             'created_at': row['created_at'],
             'updated_at': row['updated_at']
         }
@@ -442,14 +466,16 @@ class Database:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute('''
-                        INSERT INTO urls (id, url, name, enabled, interval_seconds, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO urls (id, url, name, enabled, interval_seconds, start_time, end_time, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         url_id,
                         url_data.get('url'),
                         url_data.get('name', 'Imported URL'),
                         1 if url_data.get('enabled', True) else 0,
                         url_data.get('interval_seconds'),
+                        url_data.get('start_time'),
+                        url_data.get('end_time'),
                         now,
                         now
                     ))
@@ -485,7 +511,9 @@ class Database:
                     'url': url['url'],
                     'name': url['name'],
                     'enabled': url['enabled'],
-                    'interval_seconds': url.get('interval_seconds')
+                    'interval_seconds': url.get('interval_seconds'),
+                    'start_time': url.get('start_time'),
+                    'end_time': url.get('end_time')
                 }
                 for url in urls
             ],

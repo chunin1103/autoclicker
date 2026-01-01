@@ -379,6 +379,22 @@
                         Leave empty to use global default interval
                     </small>
                 </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label for="urlStartTime">Active Start Time - Optional</label>
+                        <input type="time" id="urlStartTime" placeholder="09:00">
+                        <small style="color: #787774; font-size: 12px; display: block; margin-top: 4px;">
+                            Leave empty for 24/7 pinging
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label for="urlEndTime">Active End Time - Optional</label>
+                        <input type="time" id="urlEndTime" placeholder="22:00">
+                        <small style="color: #787774; font-size: 12px; display: block; margin-top: 4px;">
+                            Leave empty for 24/7 pinging
+                        </small>
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-primary">Add URL</button>
             </form>
         </div>
@@ -477,9 +493,9 @@
                             statusText = 'Offline';
                         }
 
-                        const intervalDisplay = url.interval_seconds
-                            ? `${url.interval_seconds}s`
-                            : `${config.interval_seconds || 300}s (global)`;
+                        const activeHoursDisplay = url.start_time && url.end_time
+                            ? `${url.start_time} - ${url.end_time}`
+                            : '24/7';
 
                         return `
                             <div class="url-item ${url.enabled ? '' : 'disabled'}">
@@ -491,15 +507,33 @@
                                 <div class="url-info">
                                     <div class="url-name">${url.name}</div>
                                     <div class="url-address">${url.url}</div>
-                                    <div style="font-size: 12px; color: #787774; margin-top: 4px;">
-                                        Interval:
-                                        <input type="number"
-                                               value="${url.interval_seconds || ''}"
-                                               placeholder="${config.interval_seconds || 300}"
-                                               min="10"
-                                               style="width: 80px; display: inline-block; padding: 2px 6px; font-size: 12px;"
-                                               onchange="updateInterval('${url.id}', this.value)">
-                                        seconds ${!url.interval_seconds ? '(using global default)' : ''}
+                                    <div style="font-size: 12px; color: #787774; margin-top: 8px; display: grid; grid-template-columns: auto auto; gap: 8px; align-items: center;">
+                                        <div>
+                                            <strong>Interval:</strong>
+                                            <input type="number"
+                                                   value="${url.interval_seconds || ''}"
+                                                   placeholder="${config.interval_seconds || 300}"
+                                                   min="10"
+                                                   style="width: 70px; display: inline-block; padding: 2px 6px; font-size: 12px; margin-left: 4px;"
+                                                   onchange="updateInterval('${url.id}', this.value)">
+                                            seconds
+                                        </div>
+                                        <div>
+                                            <strong>Active Hours:</strong>
+                                            <input type="time"
+                                                   value="${url.start_time || ''}"
+                                                   placeholder="Start"
+                                                   style="width: 90px; display: inline-block; padding: 2px 6px; font-size: 12px; margin-left: 4px;"
+                                                   onchange="updateActiveHours('${url.id}', this.value, document.getElementById('end-${url.id}').value)">
+                                            to
+                                            <input type="time"
+                                                   id="end-${url.id}"
+                                                   value="${url.end_time || ''}"
+                                                   placeholder="End"
+                                                   style="width: 90px; display: inline-block; padding: 2px 6px; font-size: 12px;"
+                                                   onchange="updateActiveHours('${url.id}', document.querySelector('[onchange*=\\'${url.id}\\'][type=time]').value, this.value)">
+                                            ${!url.start_time && !url.end_time ? '(24/7)' : ''}
+                                        </div>
                                     </div>
                                 </div>
                                 ${url.enabled ? `<div class="url-status ${statusClass}">${statusText}</div>` : ''}
@@ -520,12 +554,14 @@
             const url = document.getElementById('urlAddress').value;
             const intervalInput = document.getElementById('urlInterval').value;
             const interval_seconds = intervalInput ? parseInt(intervalInput) : null;
+            const start_time = document.getElementById('urlStartTime').value || null;
+            const end_time = document.getElementById('urlEndTime').value || null;
 
             try {
                 const response = await fetch('/api/urls', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url, enabled: true, interval_seconds })
+                    body: JSON.stringify({ name, url, enabled: true, interval_seconds, start_time, end_time })
                 });
 
                 if (response.ok) {
@@ -586,6 +622,36 @@
                     await loadData();
                 } else {
                     showToast('Error updating interval');
+                    await loadData();
+                }
+            } catch (error) {
+                showToast('Error: ' + error.message);
+                await loadData();
+            }
+        }
+
+        // Update URL active hours
+        async function updateActiveHours(id, start_time, end_time) {
+            // If both are empty, set to null (24/7)
+            const start = start_time || null;
+            const end = end_time || null;
+
+            try {
+                const response = await fetch(`/api/urls/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start_time: start, end_time: end })
+                });
+
+                if (response.ok) {
+                    if (start && end) {
+                        showToast(`Active hours updated: ${start} - ${end}`);
+                    } else {
+                        showToast('Active hours set to 24/7');
+                    }
+                    await loadData();
+                } else {
+                    showToast('Error updating active hours');
                     await loadData();
                 }
             } catch (error) {
