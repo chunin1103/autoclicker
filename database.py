@@ -55,6 +55,7 @@ class Database:
                     url TEXT NOT NULL,
                     name TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
+                    interval_seconds INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -87,9 +88,27 @@ class Database:
             conn.commit()
             logger.info("Database tables created/verified")
 
+            # Run migrations
+            self._run_migrations()
+
+    def _run_migrations(self):
+        """Run database migrations for schema updates"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Migration: Add interval_seconds column to urls table if it doesn't exist
+            cursor.execute("PRAGMA table_info(urls)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if 'interval_seconds' not in columns:
+                logger.info("Running migration: Adding interval_seconds column to urls table")
+                cursor.execute('ALTER TABLE urls ADD COLUMN interval_seconds INTEGER')
+                conn.commit()
+                logger.info("Migration completed: interval_seconds column added")
+
     # URL Management Methods
 
-    def add_url(self, url: str, name: str, enabled: bool = True) -> Dict:
+    def add_url(self, url: str, name: str, enabled: bool = True, interval_seconds: int = None) -> Dict:
         """
         Add a new URL to the database
 
@@ -97,6 +116,7 @@ class Database:
             url: The URL to ping
             name: Display name for the URL
             enabled: Whether the URL is enabled
+            interval_seconds: Custom ping interval for this URL (None = use global default)
 
         Returns:
             Dictionary containing the created URL data
@@ -107,9 +127,9 @@ class Database:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO urls (id, url, name, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (url_id, url, name, 1 if enabled else 0, now, now))
+                INSERT INTO urls (id, url, name, enabled, interval_seconds, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (url_id, url, name, 1 if enabled else 0, interval_seconds, now, now))
 
         logger.info(f"Added URL to database: {name} ({url})")
 
@@ -118,6 +138,7 @@ class Database:
             'url': url,
             'name': name,
             'enabled': enabled,
+            'interval_seconds': interval_seconds,
             'created_at': now,
             'updated_at': now
         }
@@ -175,12 +196,12 @@ class Database:
 
         Args:
             url_id: The URL ID
-            **kwargs: Fields to update (url, name, enabled)
+            **kwargs: Fields to update (url, name, enabled, interval_seconds)
 
         Returns:
             True if updated, False if URL not found
         """
-        allowed_fields = {'url', 'name', 'enabled'}
+        allowed_fields = {'url', 'name', 'enabled', 'interval_seconds'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -297,6 +318,7 @@ class Database:
             'url': row['url'],
             'name': row['name'],
             'enabled': bool(row['enabled']),
+            'interval_seconds': row['interval_seconds'] if row['interval_seconds'] is not None else None,
             'created_at': row['created_at'],
             'updated_at': row['updated_at']
         }
@@ -420,13 +442,14 @@ class Database:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute('''
-                        INSERT INTO urls (id, url, name, enabled, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO urls (id, url, name, enabled, interval_seconds, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         url_id,
                         url_data.get('url'),
                         url_data.get('name', 'Imported URL'),
                         1 if url_data.get('enabled', True) else 0,
+                        url_data.get('interval_seconds'),
                         now,
                         now
                     ))
@@ -461,7 +484,8 @@ class Database:
                     'id': url['id'],
                     'url': url['url'],
                     'name': url['name'],
-                    'enabled': url['enabled']
+                    'enabled': url['enabled'],
+                    'interval_seconds': url.get('interval_seconds')
                 }
                 for url in urls
             ],

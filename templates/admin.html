@@ -372,6 +372,13 @@
                     <label for="urlAddress">URL</label>
                     <input type="url" id="urlAddress" placeholder="https://example.com" required>
                 </div>
+                <div class="form-group">
+                    <label for="urlInterval">Ping Interval (seconds) - Optional</label>
+                    <input type="number" id="urlInterval" placeholder="Leave empty to use global default" min="10">
+                    <small style="color: #787774; font-size: 12px; display: block; margin-top: 4px;">
+                        Leave empty to use global default interval
+                    </small>
+                </div>
                 <button type="submit" class="btn btn-primary">Add URL</button>
             </form>
         </div>
@@ -470,6 +477,10 @@
                             statusText = 'Offline';
                         }
 
+                        const intervalDisplay = url.interval_seconds
+                            ? `${url.interval_seconds}s`
+                            : `${config.interval_seconds || 300}s (global)`;
+
                         return `
                             <div class="url-item ${url.enabled ? '' : 'disabled'}">
                                 <label class="toggle-switch">
@@ -480,6 +491,16 @@
                                 <div class="url-info">
                                     <div class="url-name">${url.name}</div>
                                     <div class="url-address">${url.url}</div>
+                                    <div style="font-size: 12px; color: #787774; margin-top: 4px;">
+                                        Interval:
+                                        <input type="number"
+                                               value="${url.interval_seconds || ''}"
+                                               placeholder="${config.interval_seconds || 300}"
+                                               min="10"
+                                               style="width: 80px; display: inline-block; padding: 2px 6px; font-size: 12px;"
+                                               onchange="updateInterval('${url.id}', this.value)">
+                                        seconds ${!url.interval_seconds ? '(using global default)' : ''}
+                                    </div>
                                 </div>
                                 ${url.enabled ? `<div class="url-status ${statusClass}">${statusText}</div>` : ''}
                                 <div class="url-actions">
@@ -497,12 +518,14 @@
 
             const name = document.getElementById('urlName').value;
             const url = document.getElementById('urlAddress').value;
+            const intervalInput = document.getElementById('urlInterval').value;
+            const interval_seconds = intervalInput ? parseInt(intervalInput) : null;
 
             try {
                 const response = await fetch('/api/urls', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url, enabled: true })
+                    body: JSON.stringify({ name, url, enabled: true, interval_seconds })
                 });
 
                 if (response.ok) {
@@ -536,6 +559,34 @@
                 } else {
                     showToast('Error toggling URL');
                     await loadData(); // Reload to reset checkbox
+                }
+            } catch (error) {
+                showToast('Error: ' + error.message);
+                await loadData();
+            }
+        }
+
+        // Update URL interval
+        async function updateInterval(id, value) {
+            const interval_seconds = value ? parseInt(value) : null;
+
+            try {
+                const response = await fetch(`/api/urls/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ interval_seconds })
+                });
+
+                if (response.ok) {
+                    if (interval_seconds) {
+                        showToast(`Interval updated to ${interval_seconds} seconds`);
+                    } else {
+                        showToast('Interval set to use global default');
+                    }
+                    await loadData();
+                } else {
+                    showToast('Error updating interval');
+                    await loadData();
                 }
             } catch (error) {
                 showToast('Error: ' + error.message);

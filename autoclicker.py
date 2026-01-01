@@ -55,9 +55,10 @@ class WebsitePinger:
         self.last_ping_time = None
         self.last_results = {}
         self.is_running = False
+        self.timers = {}  # url_id -> Timer instance
 
         logger.info(f"Initialized pinger with {len(self.urls)} URLs from database")
-        logger.info(f"Ping interval: {self.interval} seconds")
+        logger.info(f"Global ping interval: {self.interval} seconds")
 
     def _migrate_from_json_if_needed(self):
         """Migrate data from config.json to database if database is empty"""
@@ -107,13 +108,80 @@ class WebsitePinger:
                 logger.error(f"Error exporting config: {e}")
 
     def reload_config(self):
-        """Reload configuration from database"""
+        """Reload configuration from database and restart timers"""
         with self.config_lock:
             self.urls = self.db.get_all_urls()
             self.interval = self.db.get_setting('interval_seconds', 300)
             self.timeout = self.db.get_setting('timeout_seconds', 10)
             self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
             logger.info("Configuration reloaded from database")
+
+            # Restart all timers if pinger is running
+            if self.is_running:
+                self._restart_all_timers()
+
+    def _schedule_url_ping(self, url_obj: Dict):
+        """
+        Schedule a ping for a specific URL
+
+        Args:
+            url_obj: URL object containing id, url, interval_seconds, etc.
+        """
+        url_id = url_obj['id']
+        url = url_obj.get('url')
+        interval = url_obj.get('interval_seconds') or self.interval
+
+        def ping_and_reschedule():
+            """Ping the URL and reschedule if still enabled"""
+            # Ping the URL
+            success = self.ping_url(url)
+
+            # Update last results
+            self.last_results[url] = success
+            self.last_ping_time = datetime.now()
+
+            # Increment ping counter (per-URL basis)
+            self.db.increment_statistic('total_pings')
+
+            # Check if URL is still enabled and reschedule
+            url_obj_current = self.db.get_url(url_id)
+            if url_obj_current and url_obj_current.get('enabled', True):
+                self._schedule_url_ping(url_obj_current)
+            else:
+                # URL was disabled or deleted, remove from timers
+                if url_id in self.timers:
+                    del self.timers[url_id]
+
+        # Cancel existing timer for this URL if it exists
+        if url_id in self.timers:
+            self.timers[url_id].cancel()
+
+        # Create and start new timer
+        timer = threading.Timer(interval, ping_and_reschedule)
+        timer.daemon = True
+        timer.start()
+        self.timers[url_id] = timer
+
+        logger.info(f"Scheduled {url_obj.get('name')} to ping in {interval} seconds")
+
+    def _cancel_all_timers(self):
+        """Cancel all active timers"""
+        for timer in self.timers.values():
+            timer.cancel()
+        self.timers.clear()
+        logger.info("Cancelled all timers")
+
+    def _restart_all_timers(self):
+        """Restart all timers based on current configuration"""
+        # Cancel all existing timers
+        self._cancel_all_timers()
+
+        # Schedule enabled URLs
+        enabled_urls = [u for u in self.urls if u.get('enabled', True)]
+        for url_obj in enabled_urls:
+            self._schedule_url_ping(url_obj)
+
+        logger.info(f"Restarted timers for {len(enabled_urls)} enabled URLs")
 
     def ping_url(self, url: str) -> bool:
         """
@@ -188,23 +256,32 @@ class WebsitePinger:
         return results
 
     def run(self):
-        """Run the pinger continuously"""
+        """Run the pinger continuously with independent timers per URL"""
         logger.info("Starting autoclicker service...")
-        logger.info(f"Will ping {len(self.urls)} URLs every {self.interval} seconds")
 
         self.is_running = True
 
+        # Schedule all enabled URLs
+        enabled_urls = [u for u in self.urls if u.get('enabled', True)]
+        for url_obj in enabled_urls:
+            interval = url_obj.get('interval_seconds') or self.interval
+            logger.info(f"URL: {url_obj.get('name')} - Interval: {interval} seconds")
+            self._schedule_url_ping(url_obj)
+
+        logger.info(f"Started independent timers for {len(enabled_urls)} URLs")
+
+        # Keep main thread alive
         try:
             while self.is_running:
-                self.ping_all()
-                logger.info(f"Waiting {self.interval} seconds until next cycle...")
-                time.sleep(self.interval)
+                time.sleep(60)  # Sleep for a minute, just to keep thread alive
         except KeyboardInterrupt:
             logger.info("Shutting down gracefully...")
             self.is_running = False
+            self._cancel_all_timers()
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             self.is_running = False
+            self._cancel_all_timers()
             raise
 
     def get_status(self) -> Dict:
@@ -313,16 +390,17 @@ def add_url():
     new_url = pinger.db.add_url(
         url=data['url'],
         name=data.get('name', 'New URL'),
-        enabled=data.get('enabled', True)
+        enabled=data.get('enabled', True),
+        interval_seconds=data.get('interval_seconds')
     )
 
-    # Reload configuration
+    # Reload configuration (this will restart timers)
     pinger.reload_config()
 
     # Export to JSON backup
     pinger.save_config()
 
-    logger.info(f"Added new URL: {new_url['name']} ({new_url['url']})")
+    logger.info(f"Added new URL: {new_url['name']} ({new_url['url']}) - Interval: {new_url.get('interval_seconds', 'global default')}")
 
     return jsonify(new_url), 201
 
