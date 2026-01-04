@@ -50,7 +50,7 @@ class WebsitePinger:
         self.urls = self.db.get_all_urls()
         settings = self.db.get_all_settings()
         self.interval = settings.get('interval_seconds', 300)
-        self.timeout = settings.get('timeout_seconds', 10)
+        self.timeout = settings.get('timeout_seconds', 60)  # 60s for cold starts
         self.user_agent = settings.get('user_agent', 'AutoClicker/1.0')
         self.timezone = settings.get('timezone', 'Asia/Bangkok')
 
@@ -122,7 +122,7 @@ class WebsitePinger:
             # Get all settings in one query instead of multiple calls
             settings = self.db.get_all_settings()
             self.interval = settings.get('interval_seconds', 300)
-            self.timeout = settings.get('timeout_seconds', 10)
+            self.timeout = settings.get('timeout_seconds', 60)  # 60s for cold starts
             self.user_agent = settings.get('user_agent', 'AutoClicker/1.0')
             self.timezone = settings.get('timezone', 'Asia/Bangkok')
             logger.info(f"Configuration reloaded from database (timezone: {self.timezone})")
@@ -304,43 +304,56 @@ class WebsitePinger:
 
         logger.info(f"Restarted timers for {len(enabled_urls)} enabled URLs")
 
-    def ping_url(self, url: str) -> bool:
+    def ping_url(self, url: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
         """
-        Ping a single URL and return success status
+        Ping a single URL and return success status with retry logic
 
         Args:
             url: The URL to ping
+            max_retries: Maximum number of attempts (default: 3)
+            retry_delay: Seconds to wait between retries (default: 5)
 
         Returns:
             True if successful (status code 2xx), False otherwise
         """
-        try:
-            headers = {'User-Agent': self.user_agent}
-            response = requests.get(
-                url,
-                headers=headers,
-                timeout=self.timeout,
-                allow_redirects=True
-            )
+        headers = {'User-Agent': self.user_agent}
 
-            success = 200 <= response.status_code < 300
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=self.timeout,
+                    allow_redirects=True
+                )
 
-            if success:
-                logger.info(f"✓ {url} - Status: {response.status_code}")
-            else:
-                logger.warning(f"✗ {url} - Status: {response.status_code}")
+                success = 200 <= response.status_code < 300
 
-            return success
+                if success:
+                    if attempt > 1:
+                        logger.info(f"✓ {url} - Status: {response.status_code} (attempt {attempt}/{max_retries})")
+                    else:
+                        logger.info(f"✓ {url} - Status: {response.status_code}")
+                    return True
+                else:
+                    logger.warning(f"✗ {url} - Status: {response.status_code}")
+                    return False  # Non-2xx status, don't retry
 
-        except requests.exceptions.Timeout:
-            logger.error(f"✗ {url} - Timeout after {self.timeout}s")
-            return False
-        except requests.exceptions.ConnectionError:
-            logger.error(f"✗ {url} - Connection error")
-            return False
-        except requests.exceptions.RequestException as e:
-            logger.error(f"✗ {url} - Error: {str(e)}")
-            return False
+            except requests.exceptions.Timeout:
+                logger.warning(f"⏳ {url} - Timeout after {self.timeout}s (attempt {attempt}/{max_retries})")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"⏳ {url} - Connection error (attempt {attempt}/{max_retries})")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⏳ {url} - Error: {str(e)} (attempt {attempt}/{max_retries})")
+
+            # Retry logic: wait before next attempt (except on last attempt)
+            if attempt < max_retries:
+                logger.info(f"↻ {url} - Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+
+        # All retries exhausted
+        logger.error(f"✗ {url} - Failed after {max_retries} attempts")
+        return False
 
     def ping_all(self) -> Dict[str, bool]:
         """

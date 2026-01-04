@@ -14,6 +14,7 @@
 - Per-website interval configuration with global default fallback
 - **Time-based scheduling: Set active hours for each URL (e.g., 9 AM - 10 PM)**
 - **Automatic pause/resume outside active hours**
+- **Retry logic with 3 attempts to handle cold starts (60s timeout)**
 - Health check endpoints for cloud platform integration
 - Real-time interval and schedule editing via admin interface
 
@@ -26,6 +27,12 @@
 (Currently no tasks in progress)
 
 **Latest Session Summary (2026-01-04):**
+- Fixed websites not waking up from cold starts
+- Increased default timeout from 10s to 60s (cloud cold starts take 30-60s)
+- Added retry logic: 3 attempts with 5-second delay between retries
+- Websites now reliably wake up even with long cold start times
+
+**Previous Session (2026-01-04):**
 - Added PostgreSQL support for persistent data storage on Koyeb
 - Data now persists across server restarts and redeployments
 - Uses Neon PostgreSQL (free tier) as external database
@@ -83,3 +90,8 @@
   - Batched settings queries (1 query instead of 4 separate calls)
   - Skip JSON backup when using PostgreSQL (not needed with persistent DB)
   - Fixed 30-second delay when adding/removing URLs
+- **Fixed cold start wake-up issue (2026-01-04)**
+  - Increased default timeout from 10s to 60s (cloud platforms need 30-60s to cold start)
+  - Added retry logic with 3 attempts and 5-second delay between retries
+  - First request triggers wake-up, retries catch the now-warm service
+  - Websites now reliably wake up even on free tier cloud platforms (Koyeb, Render, etc.)

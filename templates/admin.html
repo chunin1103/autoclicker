@@ -415,7 +415,7 @@
                 </div>
                 <div class="form-group">
                     <label for="timeoutSeconds">Timeout (seconds)</label>
-                    <input type="text" id="timeoutSeconds" value="10">
+                    <input type="text" id="timeoutSeconds" value="60">
                 </div>
                 <div class="form-group">
                     <label for="timezone">Timezone</label>
@@ -456,7 +456,7 @@
                 urls = config.urls || [];
 
                 document.getElementById('intervalSeconds').value = config.interval_seconds || 300;
-                document.getElementById('timeoutSeconds').value = config.timeout_seconds || 10;
+                document.getElementById('timeoutSeconds').value = config.timeout_seconds || 60;
                 document.getElementById('timezone').value = config.timezone || 'Asia/Bangkok';
 
                 renderUrls();
