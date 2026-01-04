@@ -6,7 +6,24 @@ This guide will help you deploy the Autoclicker service on Koyeb in just a few m
 
 - A GitHub account
 - A Koyeb account (sign up free at [app.koyeb.com](https://app.koyeb.com))
+- A Neon PostgreSQL account (sign up free at [neon.tech](https://neon.tech)) - **Required for data persistence!**
 - Your code pushed to a GitHub repository
+
+## Important: Data Persistence
+
+**Without a database, your URLs and settings will be lost when Koyeb restarts!**
+
+Koyeb uses ephemeral storage - files are deleted when the container restarts. To keep your data, you need an external PostgreSQL database.
+
+### Set Up Neon PostgreSQL (Free)
+
+1. Go to [neon.tech](https://neon.tech) and sign up (free tier available)
+2. Create a new project (e.g., "autoclicker")
+3. Copy your connection string from the dashboard. It looks like:
+   ```
+   postgresql://username:password@ep-xxx-xxx-123456.us-east-2.aws.neon.tech/neondb?sslmode=require
+   ```
+4. Save this connection string - you'll need it when configuring Koyeb
 
 ## Step-by-Step Deployment
 
@@ -64,7 +81,22 @@ git push origin main
 - **Instance type**: Nano (Free tier)
 - **Scaling**: Min 1, Max 1
 
-### 7. Deploy!
+### 7. Configure Environment Variables (Important!)
+
+Add the following environment variable:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | Your Neon PostgreSQL connection string |
+
+Example:
+```
+DATABASE_URL=postgresql://username:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+```
+
+**This is required for your data to persist across restarts!**
+
+### 8. Deploy!
 
 Click the **"Deploy"** button and wait 2-3 minutes for deployment to complete.
 
@@ -173,6 +205,13 @@ You can override config via environment variables in Koyeb:
 - **Solution**: Verify `config.json` has valid URLs
 - **Solution**: Check the background thread started (look for "Starting autoclicker service..." in logs)
 
+### Data Not Persisting
+
+**Issue**: URLs and settings lost after restart
+- **Solution**: Make sure `DATABASE_URL` environment variable is set in Koyeb
+- **Solution**: Verify the Neon connection string is correct
+- **Solution**: Check logs for "Using PostgreSQL database" on startup (if you see "Using SQLite database", DATABASE_URL is not set)
+
 ## Configuration Tips
 
 ### Optimal Ping Interval
@@ -212,12 +251,16 @@ Koyeb free tier includes:
 
 ## Success Checklist
 
+- [ ] Neon PostgreSQL database created
 - [ ] Code pushed to GitHub
 - [ ] Koyeb app created and deployed
+- [ ] `DATABASE_URL` environment variable set in Koyeb
+- [ ] Logs show "Using PostgreSQL database" on startup
 - [ ] Health check passing (green status)
 - [ ] Can access `/health` endpoint
 - [ ] Can access `/status` endpoint and see ping statistics
 - [ ] Logs show "Starting autoclicker service..."
 - [ ] Logs show ping cycles completing
+- [ ] **Data persists after Koyeb restarts!**
 
-If all checkboxes are checked, your service is running 24/7 on Koyeb! 🎉
+If all checkboxes are checked, your service is running 24/7 on Koyeb with persistent data! 🎉

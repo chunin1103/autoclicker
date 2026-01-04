@@ -18,6 +18,8 @@ services:
     env:
       - name: PORT
         value: "8000"
+      - name: DATABASE_URL
+        value: ""  # Set this to your Neon PostgreSQL connection string
     health_checks:
       - http:
           path: /health

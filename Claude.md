@@ -25,7 +25,14 @@
 
 (Currently no tasks in progress)
 
-**Latest Session Summary (2026-01-01):**
+**Latest Session Summary (2026-01-04):**
+- Added PostgreSQL support for persistent data storage on Koyeb
+- Data now persists across server restarts and redeployments
+- Uses Neon PostgreSQL (free tier) as external database
+- Falls back to SQLite for local development
+- Updated KOYEB_DEPLOY.md with Neon setup instructions
+
+**Previous Session (2026-01-01):**
 - Implemented complete per-website interval and active hours scheduling system
 - Added timezone support for accurate active hours across different server locations
 - Updated all documentation (README.md, DATABASE.md, KOYEB_DEPLOY.md)
@@ -62,3 +69,10 @@
   - Uses Python's built-in zoneinfo for timezone handling (no extra dependencies)
   - Changing timezone automatically restarts all timers
   - Example: Deploy to UTC server but keep active hours in SE Asia timezone
+- **Added PostgreSQL support for persistent cloud storage (2026-01-04)**
+  - Data now persists across Koyeb server restarts and redeployments
+  - Uses Neon PostgreSQL (free tier) as external database
+  - Automatically detects DATABASE_URL environment variable
+  - Falls back to SQLite for local development (no changes needed)
+  - Updated KOYEB_DEPLOY.md with Neon setup instructions
+  - Added psycopg2-binary to requirements.txt

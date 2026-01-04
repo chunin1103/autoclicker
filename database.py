@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Database module for persistent storage of website configurations
-Uses SQLite for reliable, crash-resistant data persistence
+Supports PostgreSQL (for cloud deployments) and SQLite (for local development)
 """
 
+import os
 import sqlite3
 import logging
 import uuid
@@ -12,6 +13,15 @@ from contextlib import contextmanager
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# Check if PostgreSQL is available
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
+    logger.info("psycopg2 not installed, PostgreSQL support disabled")
 
 
 class Database:
@@ -22,31 +32,62 @@ class Database:
         Initialize database connection and create tables if needed
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (used if DATABASE_URL not set)
         """
+        self.database_url = os.environ.get('DATABASE_URL')
+        self.use_postgres = bool(self.database_url and POSTGRES_AVAILABLE)
         self.db_path = db_path
+
+        if self.use_postgres:
+            logger.info("Using PostgreSQL database")
+        else:
+            logger.info(f"Using SQLite database: {db_path}")
+
         self._init_database()
-        logger.info(f"Database initialized: {db_path}")
 
     @contextmanager
     def get_connection(self):
         """Context manager for database connections"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
-        try:
-            yield conn
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Database error: {e}")
-            raise
-        finally:
-            conn.close()
+        if self.use_postgres:
+            conn = psycopg2.connect(self.database_url)
+            try:
+                yield conn
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Database error: {e}")
+                raise
+            finally:
+                conn.close()
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row  # Enable column access by name
+            try:
+                yield conn
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Database error: {e}")
+                raise
+            finally:
+                conn.close()
+
+    def _get_cursor(self, conn):
+        """Get appropriate cursor for the database type"""
+        if self.use_postgres:
+            return conn.cursor(cursor_factory=RealDictCursor)
+        return conn.cursor()
+
+    def _placeholder(self) -> str:
+        """Get the placeholder character for parameterized queries"""
+        return '%s' if self.use_postgres else '?'
 
     def _init_database(self):
         """Create database tables if they don't exist"""
+        p = self._placeholder()
+
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
 
             # Create URLs table
             cursor.execute('''
@@ -82,10 +123,16 @@ class Database:
             ''')
 
             # Create indices for better performance
-            cursor.execute('''
-                CREATE INDEX IF NOT EXISTS idx_urls_enabled
-                ON urls(enabled)
-            ''')
+            if self.use_postgres:
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_urls_enabled
+                    ON urls(enabled)
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_urls_enabled
+                    ON urls(enabled)
+                ''')
 
             conn.commit()
             logger.info("Database tables created/verified")
@@ -96,11 +143,18 @@ class Database:
     def _run_migrations(self):
         """Run database migrations for schema updates"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
 
-            # Get current columns
-            cursor.execute("PRAGMA table_info(urls)")
-            columns = [row[1] for row in cursor.fetchall()]
+            # Get current columns based on database type
+            if self.use_postgres:
+                cursor.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'urls'
+                """)
+                columns = [row['column_name'] for row in cursor.fetchall()]
+            else:
+                cursor.execute("PRAGMA table_info(urls)")
+                columns = [row[1] for row in cursor.fetchall()]
 
             # Migration: Add interval_seconds column to urls table if it doesn't exist
             if 'interval_seconds' not in columns:
@@ -143,12 +197,13 @@ class Database:
         """
         url_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
+        p = self._placeholder()
 
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            cursor = self._get_cursor(conn)
+            cursor.execute(f'''
                 INSERT INTO urls (id, url, name, enabled, interval_seconds, start_time, end_time, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
             ''', (url_id, url, name, 1 if enabled else 0, interval_seconds, start_time, end_time, now, now))
 
         logger.info(f"Added URL to database: {name} ({url})")
@@ -175,9 +230,10 @@ class Database:
         Returns:
             Dictionary containing URL data or None if not found
         """
+        p = self._placeholder()
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM urls WHERE id = ?', (url_id,))
+            cursor = self._get_cursor(conn)
+            cursor.execute(f'SELECT * FROM urls WHERE id = {p}', (url_id,))
             row = cursor.fetchone()
 
             if row:
@@ -192,7 +248,7 @@ class Database:
             List of dictionaries containing URL data
         """
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
             cursor.execute('SELECT * FROM urls ORDER BY created_at')
             rows = cursor.fetchall()
 
@@ -206,7 +262,7 @@ class Database:
             List of dictionaries containing enabled URL data
         """
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
             cursor.execute('SELECT * FROM urls WHERE enabled = 1 ORDER BY created_at')
             rows = cursor.fetchall()
 
@@ -235,13 +291,14 @@ class Database:
 
         updates['updated_at'] = datetime.now().isoformat()
 
-        set_clause = ', '.join([f'{k} = ?' for k in updates.keys()])
+        p = self._placeholder()
+        set_clause = ', '.join([f'{k} = {p}' for k in updates.keys()])
         values = list(updates.values()) + [url_id]
 
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
             cursor.execute(f'''
-                UPDATE urls SET {set_clause} WHERE id = ?
+                UPDATE urls SET {set_clause} WHERE id = {p}
             ''', values)
 
             if cursor.rowcount > 0:
@@ -259,9 +316,10 @@ class Database:
         Returns:
             True if deleted, False if URL not found
         """
+        p = self._placeholder()
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM urls WHERE id = ?', (url_id,))
+            cursor = self._get_cursor(conn)
+            cursor.execute(f'DELETE FROM urls WHERE id = {p}', (url_id,))
 
             if cursor.rowcount > 0:
                 logger.info(f"Deleted URL {url_id}")
@@ -271,7 +329,7 @@ class Database:
     def delete_all_urls(self):
         """Delete all URLs from the database"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
             cursor.execute('DELETE FROM urls')
             logger.info("Deleted all URLs from database")
 
@@ -288,13 +346,15 @@ class Database:
         Returns:
             Setting value or default
         """
+        p = self._placeholder()
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+            cursor = self._get_cursor(conn)
+            cursor.execute(f'SELECT value FROM settings WHERE key = {p}', (key,))
             row = cursor.fetchone()
 
             if row:
-                return self._parse_setting_value(row['value'])
+                value = row['value'] if self.use_postgres else row['value']
+                return self._parse_setting_value(value)
             return default
 
     def set_setting(self, key: str, value: any):
@@ -307,13 +367,21 @@ class Database:
         """
         now = datetime.now().isoformat()
         value_str = str(value)
+        p = self._placeholder()
 
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO settings (key, value, updated_at)
-                VALUES (?, ?, ?)
-            ''', (key, value_str, now))
+            cursor = self._get_cursor(conn)
+            if self.use_postgres:
+                cursor.execute(f'''
+                    INSERT INTO settings (key, value, updated_at)
+                    VALUES ({p}, {p}, {p})
+                    ON CONFLICT (key) DO UPDATE SET value = {p}, updated_at = {p}
+                ''', (key, value_str, now, value_str, now))
+            else:
+                cursor.execute(f'''
+                    INSERT OR REPLACE INTO settings (key, value, updated_at)
+                    VALUES ({p}, {p}, {p})
+                ''', (key, value_str, now))
 
         logger.info(f"Setting updated: {key} = {value}")
 
@@ -325,27 +393,42 @@ class Database:
             Dictionary of all settings
         """
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
             cursor.execute('SELECT key, value FROM settings')
             rows = cursor.fetchall()
 
+            if self.use_postgres:
+                return {row['key']: self._parse_setting_value(row['value']) for row in rows}
             return {row['key']: self._parse_setting_value(row['value']) for row in rows}
 
     # Helper Methods
 
     def _row_to_url_dict(self, row) -> Dict:
-        """Convert SQLite row to URL dictionary"""
-        return {
-            'id': row['id'],
-            'url': row['url'],
-            'name': row['name'],
-            'enabled': bool(row['enabled']),
-            'interval_seconds': row['interval_seconds'] if row['interval_seconds'] is not None else None,
-            'start_time': row['start_time'] if 'start_time' in row.keys() and row['start_time'] is not None else None,
-            'end_time': row['end_time'] if 'end_time' in row.keys() and row['end_time'] is not None else None,
-            'created_at': row['created_at'],
-            'updated_at': row['updated_at']
-        }
+        """Convert database row to URL dictionary"""
+        if self.use_postgres:
+            return {
+                'id': row['id'],
+                'url': row['url'],
+                'name': row['name'],
+                'enabled': bool(row['enabled']),
+                'interval_seconds': row['interval_seconds'] if row['interval_seconds'] is not None else None,
+                'start_time': row['start_time'] if row.get('start_time') is not None else None,
+                'end_time': row['end_time'] if row.get('end_time') is not None else None,
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
+        else:
+            return {
+                'id': row['id'],
+                'url': row['url'],
+                'name': row['name'],
+                'enabled': bool(row['enabled']),
+                'interval_seconds': row['interval_seconds'] if row['interval_seconds'] is not None else None,
+                'start_time': row['start_time'] if 'start_time' in row.keys() and row['start_time'] is not None else None,
+                'end_time': row['end_time'] if 'end_time' in row.keys() and row['end_time'] is not None else None,
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
 
     def _parse_setting_value(self, value: str) -> any:
         """Parse setting value from string"""
@@ -380,13 +463,14 @@ class Database:
         Returns:
             Statistic value (defaults to 0 if not found)
         """
+        p = self._placeholder()
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT value FROM statistics WHERE key = ?', (key,))
+            cursor = self._get_cursor(conn)
+            cursor.execute(f'SELECT value FROM statistics WHERE key = {p}', (key,))
             row = cursor.fetchone()
 
             if row:
-                return int(row['value'])
+                return int(row['value'] if self.use_postgres else row['value'])
             return 0
 
     def increment_statistic(self, key: str, amount: int = 1) -> int:
@@ -401,24 +485,25 @@ class Database:
             New value after increment
         """
         now = datetime.now().isoformat()
+        p = self._placeholder()
 
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = self._get_cursor(conn)
 
             # Get current value
-            cursor.execute('SELECT value FROM statistics WHERE key = ?', (key,))
+            cursor.execute(f'SELECT value FROM statistics WHERE key = {p}', (key,))
             row = cursor.fetchone()
 
             if row:
-                new_value = int(row['value']) + amount
-                cursor.execute('''
-                    UPDATE statistics SET value = ?, updated_at = ? WHERE key = ?
+                new_value = int(row['value'] if self.use_postgres else row['value']) + amount
+                cursor.execute(f'''
+                    UPDATE statistics SET value = {p}, updated_at = {p} WHERE key = {p}
                 ''', (new_value, now, key))
             else:
                 new_value = amount
-                cursor.execute('''
+                cursor.execute(f'''
                     INSERT INTO statistics (key, value, updated_at)
-                    VALUES (?, ?, ?)
+                    VALUES ({p}, {p}, {p})
                 ''', (key, new_value, now))
 
         logger.debug(f"Statistic incremented: {key} = {new_value}")
@@ -433,13 +518,21 @@ class Database:
             value: Statistic value
         """
         now = datetime.now().isoformat()
+        p = self._placeholder()
 
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO statistics (key, value, updated_at)
-                VALUES (?, ?, ?)
-            ''', (key, value, now))
+            cursor = self._get_cursor(conn)
+            if self.use_postgres:
+                cursor.execute(f'''
+                    INSERT INTO statistics (key, value, updated_at)
+                    VALUES ({p}, {p}, {p})
+                    ON CONFLICT (key) DO UPDATE SET value = {p}, updated_at = {p}
+                ''', (key, value, now, value, now))
+            else:
+                cursor.execute(f'''
+                    INSERT OR REPLACE INTO statistics (key, value, updated_at)
+                    VALUES ({p}, {p}, {p})
+                ''', (key, value, now))
 
         logger.info(f"Statistic set: {key} = {value}")
 
@@ -462,12 +555,13 @@ class Database:
             if not existing:
                 url_id = url_data.get('id', str(uuid.uuid4()))
                 now = datetime.now().isoformat()
+                p = self._placeholder()
 
                 with self.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute('''
+                    cursor = self._get_cursor(conn)
+                    cursor.execute(f'''
                         INSERT INTO urls (id, url, name, enabled, interval_seconds, start_time, end_time, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
                     ''', (
                         url_id,
                         url_data.get('url'),
