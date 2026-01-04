@@ -4,10 +4,10 @@
 
 **Autoclicker** is a production-ready Python-based website pinger service that automatically pings configured websites at regular intervals to keep them alive and monitor uptime.
 
-**Tech Stack**: Python 3.11.9, Flask, Gunicorn, SQLite3, Docker
+**Tech Stack**: Python 3.11.9, Flask, Gunicorn, SQLite3/PostgreSQL, Docker
 **Key Features**:
 - Professional Notion-style admin dashboard for URL management
-- SQLite database for persistent, crash-resistant data storage
+- SQLite/PostgreSQL database for persistent, crash-resistant data storage
 - REST API for configuration and monitoring
 - Multi-deployment support (Koyeb, Docker, systemd, Heroku, VPS)
 - Independent timers for each URL with customizable ping intervals
@@ -31,6 +31,8 @@
 - Uses Neon PostgreSQL (free tier) as external database
 - Falls back to SQLite for local development
 - Updated KOYEB_DEPLOY.md with Neon setup instructions
+- Optimized database performance (connection pooling, batched queries)
+- Fixed 30-second delay when adding/removing URLs
 
 **Previous Session (2026-01-01):**
 - Implemented complete per-website interval and active hours scheduling system
@@ -76,3 +78,8 @@
   - Falls back to SQLite for local development (no changes needed)
   - Updated KOYEB_DEPLOY.md with Neon setup instructions
   - Added psycopg2-binary to requirements.txt
+- **Optimized database performance for PostgreSQL (2026-01-04)**
+  - Added connection pooling (reuses connections instead of opening new ones)
+  - Batched settings queries (1 query instead of 4 separate calls)
+  - Skip JSON backup when using PostgreSQL (not needed with persistent DB)
+  - Fixed 30-second delay when adding/removing URLs
