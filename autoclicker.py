@@ -46,12 +46,13 @@ class WebsitePinger:
         # Migrate data from config.json if database is empty
         self._migrate_from_json_if_needed()
 
-        # Load configuration from database
+        # Load configuration from database (batch settings query for performance)
         self.urls = self.db.get_all_urls()
-        self.interval = self.db.get_setting('interval_seconds', 300)
-        self.timeout = self.db.get_setting('timeout_seconds', 10)
-        self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
-        self.timezone = self.db.get_setting('timezone', 'Asia/Bangkok')
+        settings = self.db.get_all_settings()
+        self.interval = settings.get('interval_seconds', 300)
+        self.timeout = settings.get('timeout_seconds', 10)
+        self.user_agent = settings.get('user_agent', 'AutoClicker/1.0')
+        self.timezone = settings.get('timezone', 'Asia/Bangkok')
 
         # Track statistics (total_pings now stored in database)
         self.last_ping_time = None
@@ -99,7 +100,12 @@ class WebsitePinger:
         """
         Export database to config.json as backup
         Note: Primary storage is now the database
+        Skipped when using PostgreSQL (data already persistent)
         """
+        # Skip JSON backup when using PostgreSQL - no need for local backup
+        if self.db.use_postgres:
+            return
+
         with self.config_lock:
             try:
                 config = self.db.export_to_config()
@@ -113,10 +119,12 @@ class WebsitePinger:
         """Reload configuration from database and restart timers"""
         with self.config_lock:
             self.urls = self.db.get_all_urls()
-            self.interval = self.db.get_setting('interval_seconds', 300)
-            self.timeout = self.db.get_setting('timeout_seconds', 10)
-            self.user_agent = self.db.get_setting('user_agent', 'AutoClicker/1.0')
-            self.timezone = self.db.get_setting('timezone', 'Asia/Bangkok')
+            # Get all settings in one query instead of multiple calls
+            settings = self.db.get_all_settings()
+            self.interval = settings.get('interval_seconds', 300)
+            self.timeout = settings.get('timeout_seconds', 10)
+            self.user_agent = settings.get('user_agent', 'AutoClicker/1.0')
+            self.timezone = settings.get('timezone', 'Asia/Bangkok')
             logger.info(f"Configuration reloaded from database (timezone: {self.timezone})")
 
             # Restart all timers if pinger is running

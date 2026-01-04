@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
+    from psycopg2 import pool
     POSTGRES_AVAILABLE = True
 except ImportError:
     POSTGRES_AVAILABLE = False
+    pool = None
     logger.info("psycopg2 not installed, PostgreSQL support disabled")
 
 
@@ -37,9 +39,12 @@ class Database:
         self.database_url = os.environ.get('DATABASE_URL')
         self.use_postgres = bool(self.database_url and POSTGRES_AVAILABLE)
         self.db_path = db_path
+        self._pool = None
 
         if self.use_postgres:
-            logger.info("Using PostgreSQL database")
+            # Use connection pooling for PostgreSQL (faster than opening new connections)
+            self._pool = pool.ThreadedConnectionPool(1, 5, self.database_url)
+            logger.info("Using PostgreSQL database with connection pooling")
         else:
             logger.info(f"Using SQLite database: {db_path}")
 
@@ -47,9 +52,9 @@ class Database:
 
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections"""
+        """Context manager for database connections (uses pool for PostgreSQL)"""
         if self.use_postgres:
-            conn = psycopg2.connect(self.database_url)
+            conn = self._pool.getconn()
             try:
                 yield conn
                 conn.commit()
@@ -58,7 +63,7 @@ class Database:
                 logger.error(f"Database error: {e}")
                 raise
             finally:
-                conn.close()
+                self._pool.putconn(conn)
         else:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row  # Enable column access by name
