@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd PostgreSQL support for persistent cloud storage\n\n- Database now persists across Koyeb restarts using Neon PostgreSQL\n- Automatically detects DATABASE_URL environment variable\n- Falls back to SQLite for local development\n- Updated deployment docs with Neon setup instructions\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nOptimize database performance for PostgreSQL\n\n- Add connection pooling \\(reuses connections instead of opening new ones\\)\n- Batch settings queries \\(1 query instead of 4\\)\n- Skip JSON backup when using PostgreSQL \\(not needed\\)\n\nThis should significantly reduce the 30-second delay when adding/removing URLs.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
     ]
   }
 }
